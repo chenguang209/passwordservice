@@ -1,4 +1,4 @@
-package dataencrypt
+package passwordservice
 
 type Response struct {
 	Code    string `json:"code"`

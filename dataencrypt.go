@@ -1,4 +1,4 @@
-package dataencrypt
+package passwordservice
 
 import (
 	"bytes"
