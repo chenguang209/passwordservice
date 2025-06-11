@@ -1,3 +1,3 @@
-module gitlab.axa-dev.wise-paas.top/desk/data-crypto-go
+module github.com/chenguang209/passwordservice
 
 go 1.23.0
