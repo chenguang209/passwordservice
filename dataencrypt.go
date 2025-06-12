@@ -31,11 +31,6 @@ var (
 	DataEncryptMacAlgorithmParam string
 )
 
-type MacResponse struct {
-	Mac string `json:"mac"`
-	Iv  string `json:"iv"`
-}
-
 func init() {
 	DataEncryptServiceAddr = getEnvDefault(EnvDataEncryptServiceAddr, "")
 	DataEncryptBasicAuth = getEnvDefault(EnvDataEncryptBasicAuth, "")
@@ -193,10 +188,125 @@ func Decrypt(data map[string]string) (map[string]string, error) {
 	return response.Data, nil
 }
 
-func CalculateDataIntegrity(data string) (MacResponse, error) {
+func CalculateDataIntegrity(data string) (*MacResponse, error) {
 
+	if err := checkGlobalVars(); err != nil {
+		return &MacResponse{}, err
+	}
+
+	requestBody := map[string]interface{}{
+		"keyCode": DataEncryptKeyCode,
+		"algorithmParam": DataEncryptAlgorithmParam,
+		"data": data,
+	}
+
+	requestBodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return &MacResponse{}, err
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+
+	httpClient := &http.Client{
+		Transport: transport,
+	}
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/cipher/mac", DataEncryptServiceAddr), bytes.NewBuffer(requestBodyBytes))
+	if err != nil {
+		return &MacResponse{}, err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Basic " + DataEncryptBasicAuth)
+	req.Header.Add("X-ICSP-Tenant-Code", DataEncryptTenantCode)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return &MacResponse{}, err
+	}
+
+	responseData := struct {
+		Response Response
+		Data 	MacResponse `json:"data"`
+	}{}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return &MacResponse{}, err
+	}
+
+	if err := json.Unmarshal(body, &responseData); err != nil {
+		return &MacResponse{}, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return &MacResponse{}, fmt.Errorf("failed to request with %s, %s", responseData.Response.Code, responseData.Response.Message)
+	}
+
+	return &responseData.Data, nil
 }
 
 func VerifyDataIntegrity(data string, macResponse MacResponse) (bool, error) {
+	if err := checkGlobalVars(); err != nil {
+		return false, err
+	}
 
+	requestBody := map[string]interface{}{
+		"keyCode": DataEncryptKeyCode,
+		"algorithmParam": DataEncryptAlgorithmParam,
+		"data": data,
+		"mac": macResponse.Mac,
+		"iv": macResponse.Iv,
+	}
+
+	requestBodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return false, err
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+
+	httpClient := &http.Client{
+		Transport: transport,
+	}
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/cipher/macVerify", DataEncryptServiceAddr), bytes.NewBuffer(requestBodyBytes))
+	if err != nil {
+		return false, err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Basic " + DataEncryptBasicAuth)
+	req.Header.Add("X-ICSP-Tenant-Code", DataEncryptTenantCode)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+
+	responseData := struct {
+		Response Response
+		Data 	McaVerifyResponse `json:"data"`
+	}{}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+
+	if err := json.Unmarshal(body, &responseData); err != nil {
+		return false, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("failed to request with %s, %s", responseData.Response.Code, responseData.Response.Message)
+	}
+
+	return responseData.Data.VerifyResult, nil
 }
