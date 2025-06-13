@@ -268,27 +268,23 @@ func CalculateDataIntegrity(data interface{}) (*MacResponse, error) {
 	return &responseData.Data, nil
 }
 
-func VerifyDataIntegrity(data interface{}, macResponse map[string]string) (bool, error) {
+func VerifyDataIntegrity(data interface{}, macResponse MacResponse) (bool, error) {
 	if err := checkGlobalVars(); err != nil {
 		return false, err
 	}
 
 	jsonD, err := json.Marshal(data)
-
 	if err!= nil {
 		return false, err
 	}
+	
 	base64Data := base64.StdEncoding.EncodeToString(jsonD)
-
-	if macResponse["mac"] == "" || macResponse["iv"] == "" {
-		return false, fmt.Errorf("Failed to map the requested data into the structure")
-	}
 	requestBody := map[string]interface{}{
 		"keyCode": DataEncryptKeyCode,
 		"algorithmParam": DataEncryptAlgorithmParam,
 		"data": base64Data,
-		"mac": macResponse["mac"],
-		"iv": macResponse["iv"],
+		"mac": macResponse.Mac,
+		"iv": macResponse.Iv,
 	}
 
 	requestBodyBytes, err := json.Marshal(requestBody)
