@@ -203,7 +203,7 @@ func Decrypt(data map[string]string) (map[string]string, error) {
 	return response.Data, nil
 }
 
-func CalculateDataIntegrity(data interface{}) (map[string]string, error) {
+func CalculateDataIntegrity(data interface{}) (*MacResponse, error) {
 
 	if err := checkGlobalVars(); err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func CalculateDataIntegrity(data interface{}) (map[string]string, error) {
 
 	responseData := struct {
 		Response Response
-		Data 	map[string]string `json:"data"`
+		Data 	MacResponse `json:"data"`
 	}{}
 
 	body, err := io.ReadAll(resp.Body)
@@ -265,7 +265,7 @@ func CalculateDataIntegrity(data interface{}) (map[string]string, error) {
 		return nil, fmt.Errorf("failed to request with %s, %s", responseData.Response.Code, responseData.Response.Message)
 	}
 
-	return responseData.Data, nil
+	return &responseData.Data, nil
 }
 
 func VerifyDataIntegrity(data interface{}, macResponse map[string]string) (bool, error) {
