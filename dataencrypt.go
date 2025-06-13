@@ -1,8 +1,9 @@
-package passwordservice
+﻿package passwordservice
 
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -72,6 +73,11 @@ func Encrypt(data map[string]string) (map[string]string, error) {
 		return nil, err
 	}
 
+	// 键值对的值进行base64编码
+	for k, v := range data {
+		data[k] = base64.StdEncoding.EncodeToString([]byte(v))
+	}
+
 	requestBody := map[string]interface{}{
 		"keyCode": DataEncryptKeyCode,
 		"algorithmParam": DataEncryptAlgorithmParam,
@@ -108,7 +114,7 @@ func Encrypt(data map[string]string) (map[string]string, error) {
 
 	response := struct {
 		Response Response
-		Data map[string]string `json:"data"`
+		Data map[string]map[string]string `json:"data"`
 	}{}
 
 	body, err := io.ReadAll(resp.Body)
@@ -124,7 +130,7 @@ func Encrypt(data map[string]string) (map[string]string, error) {
 		return nil, fmt.Errorf("failed to request with %s, %s", response.Response.Code, response.Response.Message)
 	}
 
-	return response.Data, nil
+	return response.Data["encData"], nil
 }
 
 func Decrypt(data map[string]string) (map[string]string, error) {
@@ -185,24 +191,37 @@ func Decrypt(data map[string]string) (map[string]string, error) {
 		return nil, fmt.Errorf("failed to request with %s, %s", response.Response.Code, response.Response.Message)
 	}
 
+	// base64解码
+	for k, v := range response.Data {
+		decoded, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return nil, err
+		}
+		response.Data[k] = string(decoded)
+	}
+
 	return response.Data, nil
 }
 
-func CalculateDataIntegrity(data string) (*MacResponse, error) {
+func CalculateDataIntegrity(data interface{}) (map[string]string, error) {
 
 	if err := checkGlobalVars(); err != nil {
-		return &MacResponse{}, err
+		return nil, err
 	}
-
+	jsonD, err := json.Marshal(data)
+	if err!= nil {
+		return nil, err
+	}
+	base64Data := base64.StdEncoding.EncodeToString(jsonD)
 	requestBody := map[string]interface{}{
 		"keyCode": DataEncryptKeyCode,
 		"algorithmParam": DataEncryptAlgorithmParam,
-		"data": data,
+		"data": base64Data,
 	}
 
 	requestBodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return &MacResponse{}, err
+		return nil, err
 	}
 
 	transport := &http.Transport{
@@ -216,7 +235,7 @@ func CalculateDataIntegrity(data string) (*MacResponse, error) {
 	}
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/cipher/mac", DataEncryptServiceAddr), bytes.NewBuffer(requestBodyBytes))
 	if err != nil {
-		return &MacResponse{}, err
+		return nil, err
 	}
 
 	req.Header.Add("Content-Type", "application/json")
@@ -225,41 +244,51 @@ func CalculateDataIntegrity(data string) (*MacResponse, error) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return &MacResponse{}, err
+		return nil, err
 	}
 
 	responseData := struct {
 		Response Response
-		Data 	MacResponse `json:"data"`
+		Data 	map[string]string `json:"data"`
 	}{}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return &MacResponse{}, err
+		return nil, err
 	}
 
 	if err := json.Unmarshal(body, &responseData); err != nil {
-		return &MacResponse{}, err
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return &MacResponse{}, fmt.Errorf("failed to request with %s, %s", responseData.Response.Code, responseData.Response.Message)
+		return nil, fmt.Errorf("failed to request with %s, %s", responseData.Response.Code, responseData.Response.Message)
 	}
 
-	return &responseData.Data, nil
+	return responseData.Data, nil
 }
 
-func VerifyDataIntegrity(data string, macResponse MacResponse) (bool, error) {
+func VerifyDataIntegrity(data interface{}, macResponse map[string]string) (bool, error) {
 	if err := checkGlobalVars(); err != nil {
 		return false, err
 	}
 
+	jsonD, err := json.Marshal(data)
+
+	if err!= nil {
+		return false, err
+	}
+	base64Data := base64.StdEncoding.EncodeToString(jsonD)
+
+	if macResponse["mac"] == "" || macResponse["iv"] == "" {
+		return false, fmt.Errorf("Failed to map the requested data into the structure")
+	}
 	requestBody := map[string]interface{}{
 		"keyCode": DataEncryptKeyCode,
 		"algorithmParam": DataEncryptAlgorithmParam,
-		"data": data,
-		"mac": macResponse.Mac,
-		"iv": macResponse.Iv,
+		"data": base64Data,
+		"mac": macResponse["mac"],
+		"iv": macResponse["iv"],
 	}
 
 	requestBodyBytes, err := json.Marshal(requestBody)
